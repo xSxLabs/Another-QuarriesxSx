@@ -422,9 +422,9 @@ public final class QuarryMiningEngine {
     }
 
     public List<BlockPos> getChunkTicketPositions(Level level) {
-        if (quarry.getDiggingMode() != QuarryDiggingMode.CHUNK) {
-            return List.of();
-        }
+        // Worker targets must stay BLOCK_TICKING in every digging mode.
+        // Previously VOLUME mode returned no target positions, so the quarry BE
+        // kept ticking while remote mining chunks expired after the player left.
         return getActiveTargetPositions();
     }
 
