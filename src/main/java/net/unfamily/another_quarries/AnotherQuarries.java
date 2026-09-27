@@ -20,6 +20,7 @@ import net.neoforged.neoforge.common.world.chunk.RegisterTicketControllersEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
+import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 
 @Mod(AnotherQuarries.MOD_ID)
 public final class AnotherQuarries {
@@ -41,6 +42,7 @@ public final class AnotherQuarries {
     private static void onLevelTickPost(LevelTickEvent.Post event) {
         if (event.getLevel() instanceof ServerLevel server) {
             StructureQuarryBreakCascade.tick(server);
+            QuarryBlockEntity.fallbackServerTick(server);
         }
     }
 
