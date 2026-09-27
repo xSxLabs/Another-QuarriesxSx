@@ -51,6 +51,7 @@ import java.util.WeakHashMap;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private static final Map<QuarryBlockEntity, Long> SERVER_TICK_WATCH = new WeakHashMap<>();
+    private static final Map<ServerLevel, java.util.Set<BlockPos>> KNOWN_QUARRY_POSITIONS = new WeakHashMap<>();
 
     @Override
     public void onLoad() {
@@ -60,6 +61,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             // the level tick can drive the quarry even if vanilla stops invoking
             // the BlockEntity ticker because no player is nearby.
             SERVER_TICK_WATCH.put(this, Long.MIN_VALUE);
+            KNOWN_QUARRY_POSITIONS.computeIfAbsent(serverLevel, ignored -> new java.util.HashSet<>()).add(worldPosition.immutable());
             updateMiningChunkTickets(serverLevel);
         }
     }
@@ -441,25 +443,41 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
      */
     public static void fallbackServerTick(ServerLevel level) {
         long now = level.getGameTime();
+        var known = KNOWN_QUARRY_POSITIONS.computeIfAbsent(level, ignored -> new java.util.HashSet<>());
+
+        // Position-based recovery: the position survives a BlockEntity/chunk unload.
+        // First request BLOCK_TICKING for every known quarry chunk. Once the chunk is
+        // present again, recover the current BE instance and drive it below.
+        for (BlockPos pos : new ArrayList<>(known)) {
+            QuarryChunkTickets.keepOwnerTicking(level, pos);
+            if (!level.hasChunkAt(pos)) {
+                continue;
+            }
+            BlockEntity current = level.getBlockEntity(pos);
+            if (current instanceof QuarryBlockEntity quarry) {
+                SERVER_TICK_WATCH.putIfAbsent(quarry, Long.MIN_VALUE);
+            } else {
+                // The chunk is loaded and the quarry block is genuinely gone.
+                known.remove(pos);
+            }
+        }
+
         for (var entry : new ArrayList<>(SERVER_TICK_WATCH.entrySet())) {
             QuarryBlockEntity be = entry.getKey();
-            if (be == null || be.isRemoved() || be.getLevel() != level) {
+            if (be == null || be.getLevel() != level) {
                 SERVER_TICK_WATCH.remove(be);
                 continue;
             }
             BlockPos pos = be.getBlockPos();
-            // Refresh BLOCK_TICKING tickets from the level tick, before deciding
-            // whether the normal BlockEntity ticker already handled this quarry.
-            // This breaks the dependency cycle where the BE must tick in order
-            // to keep the ticket alive that is required for the BE to tick.
+            QuarryChunkTickets.keepOwnerTicking(level, pos);
+            if (be.isRemoved() || level.getBlockEntity(pos) != be) {
+                SERVER_TICK_WATCH.remove(be);
+                continue;
+            }
             if (be.canWork()) {
                 be.updateMiningChunkTickets(level);
             }
             if (entry.getValue() != null && entry.getValue() == now) {
-                continue;
-            }
-            if (level.getBlockEntity(pos) != be) {
-                SERVER_TICK_WATCH.remove(be);
                 continue;
             }
             serverTick(level, pos, be.getBlockState(), be);
@@ -502,6 +520,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     @Override
     public void setRemoved() {
         SERVER_TICK_WATCH.remove(this);
+        // Do not remove KNOWN_QUARRY_POSITIONS here: setRemoved is also called
+        // during chunk unload. The level ticker removes the position only after
+        // that chunk is loaded and the quarry block is actually absent.
         if (level instanceof ServerLevel serverLevel) {
             releaseMiningChunkTickets(serverLevel);
         }
