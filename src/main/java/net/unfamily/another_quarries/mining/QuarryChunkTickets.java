@@ -1,6 +1,10 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ChunkLevel;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.Ticket;
@@ -10,47 +14,57 @@ import net.minecraft.world.level.ChunkPos;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
- * Keeps the quarry and its active target chunks at BLOCK_TICKING status.
- *
- * This deliberately mirrors Logistics' working quarry implementation: it uses
- * vanilla ServerChunkCache tickets at ChunkLevel.byStatus(BLOCK_TICKING)
- * instead of NeoForge forced-chunk tickets.
+ * Chunk ticking copied from the working Logistics quarry pattern for MC 26.1:
+ * registered 20-tick TicketTypes, refreshed every machine tick, with the ticket
+ * level derived from FullChunkStatus.BLOCK_TICKING.
  */
 public final class QuarryChunkTickets {
-    public static final TicketType TICKET_TYPE = new TicketType(40L, false);
+    private static TicketType QUARRY;
+    private static TicketType QUARRY_BOUNDARY;
 
     private QuarryChunkTickets() {}
 
-    private static Ticket ticket() {
-        return new Ticket(TICKET_TYPE, net.minecraft.server.level.ChunkLevel.byStatus(FullChunkStatus.BLOCK_TICKING));
+    public static void registerTicketTypes() {
+        if (QUARRY != null) {
+            return;
+        }
+        QUARRY = Registry.register(
+                BuiltInRegistries.TICKET_TYPE,
+                Identifier.fromNamespaceAndPath("another_quarries", "quarry"),
+                new TicketType(20L, 15));
+        QUARRY_BOUNDARY = Registry.register(
+                BuiltInRegistries.TICKET_TYPE,
+                Identifier.fromNamespaceAndPath("another_quarries", "quarry_boundary"),
+                new TicketType(20L, 14));
     }
 
     public static void sync(ServerLevel level, BlockPos owner, Iterable<BlockPos> activeTargets, LongOpenHashSet forcedChunks) {
+        if (QUARRY == null) {
+            return;
+        }
+
+        int ticketLevel = ChunkLevel.byStatus(FullChunkStatus.BLOCK_TICKING);
+        ChunkPos ownerChunk = new ChunkPos(owner);
+        level.getChunkSource().addTicket(new Ticket(QUARRY, ticketLevel), ownerChunk);
+
         LongOpenHashSet needed = new LongOpenHashSet();
-        needed.add(ChunkPos.pack(owner));
+        needed.add(ownerChunk.toLong());
         for (BlockPos target : activeTargets) {
-            needed.add(ChunkPos.pack(target));
+            ChunkPos targetChunk = new ChunkPos(target);
+            needed.add(targetChunk.toLong());
+            level.getChunkSource().addTicket(new Ticket(QUARRY_BOUNDARY, ticketLevel), targetChunk);
         }
 
-        // Refresh every needed ticket every machine tick, exactly like Logistics.
-        for (long chunk : needed) {
-            level.getChunkSource().addTicket(ticket(), ChunkPos.unpack(chunk));
-        }
-
-        LongOpenHashSet toRemove = new LongOpenHashSet(forcedChunks);
-        toRemove.removeAll(needed);
-        for (long chunk : toRemove) {
-            level.getChunkSource().removeTicketWithRadius(TICKET_TYPE, ChunkPos.unpack(chunk), 2);
-            forcedChunks.remove(chunk);
-        }
-
+        // Logistics relies on the 20-tick timeout instead of explicit removal.
+        // Any ticket not refreshed naturally disappears after the machine stops
+        // needing that chunk.
+        forcedChunks.clear();
         forcedChunks.addAll(needed);
     }
 
     public static void releaseAll(ServerLevel level, BlockPos owner, LongOpenHashSet forcedChunks) {
-        for (long chunk : forcedChunks.toLongArray()) {
-            level.getChunkSource().removeTicketWithRadius(TICKET_TYPE, ChunkPos.unpack(chunk), 2);
-        }
+        // Intentionally no explicit removal: these tickets expire after 20 ticks,
+        // matching the working Logistics implementation.
         forcedChunks.clear();
     }
 }
