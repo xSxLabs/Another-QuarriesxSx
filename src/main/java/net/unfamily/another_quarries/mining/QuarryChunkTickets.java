@@ -17,11 +17,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
  * instead of NeoForge forced-chunk tickets.
  */
 public final class QuarryChunkTickets {
-    public static final TicketType TICKET_TYPE = new TicketType(
-            net.minecraft.resources.Identifier.fromNamespaceAndPath("another_quarries", "quarry_block_ticking"),
-            40L,
-            false,
-            TicketType.TicketUse.LOADING_AND_SIMULATION);
+    public static final TicketType TICKET_TYPE = new TicketType(40L, false);
 
     private QuarryChunkTickets() {}
 
@@ -44,7 +40,7 @@ public final class QuarryChunkTickets {
         LongOpenHashSet toRemove = new LongOpenHashSet(forcedChunks);
         toRemove.removeAll(needed);
         for (long chunk : toRemove) {
-            level.getChunkSource().removeTicket(ticket(), ChunkPos.unpack(chunk));
+            level.getChunkSource().removeTicketWithRadius(TICKET_TYPE, ChunkPos.unpack(chunk), 2);
             forcedChunks.remove(chunk);
         }
 
@@ -53,7 +49,7 @@ public final class QuarryChunkTickets {
 
     public static void releaseAll(ServerLevel level, BlockPos owner, LongOpenHashSet forcedChunks) {
         for (long chunk : forcedChunks.toLongArray()) {
-            level.getChunkSource().removeTicket(ticket(), ChunkPos.unpack(chunk));
+            level.getChunkSource().removeTicketWithRadius(TICKET_TYPE, ChunkPos.unpack(chunk), 2);
         }
         forcedChunks.clear();
     }
