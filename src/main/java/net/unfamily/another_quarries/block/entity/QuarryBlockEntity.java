@@ -51,6 +51,18 @@ import java.util.WeakHashMap;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
     private static final Map<QuarryBlockEntity, Long> SERVER_TICK_WATCH = new WeakHashMap<>();
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (level instanceof ServerLevel serverLevel) {
+            // Register as soon as the quarry's chunk is loaded. From this point
+            // the level tick can drive the quarry even if vanilla stops invoking
+            // the BlockEntity ticker because no player is nearby.
+            SERVER_TICK_WATCH.put(this, Long.MIN_VALUE);
+            updateMiningChunkTickets(serverLevel);
+        }
+    }
     public static final int BUFFER_SLOT_COUNT = 27;
     public static int equipmentSlotCount() {
         return QuarryEquipmentSlots.slotCount();
@@ -489,6 +501,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
 
     @Override
     public void setRemoved() {
+        SERVER_TICK_WATCH.remove(this);
         if (level instanceof ServerLevel serverLevel) {
             releaseMiningChunkTickets(serverLevel);
         }
