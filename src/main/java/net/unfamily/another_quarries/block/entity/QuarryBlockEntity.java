@@ -435,10 +435,17 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
                 SERVER_TICK_WATCH.remove(be);
                 continue;
             }
+            BlockPos pos = be.getBlockPos();
+            // Refresh BLOCK_TICKING tickets from the level tick, before deciding
+            // whether the normal BlockEntity ticker already handled this quarry.
+            // This breaks the dependency cycle where the BE must tick in order
+            // to keep the ticket alive that is required for the BE to tick.
+            if (be.canWork()) {
+                be.updateMiningChunkTickets(level);
+            }
             if (entry.getValue() != null && entry.getValue() == now) {
                 continue;
             }
-            BlockPos pos = be.getBlockPos();
             if (level.getBlockEntity(pos) != be) {
                 SERVER_TICK_WATCH.remove(be);
                 continue;
