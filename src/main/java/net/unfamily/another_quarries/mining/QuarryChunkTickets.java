@@ -1,72 +1,59 @@
 package net.unfamily.another_quarries.mining;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.Ticket;
+import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
-import net.unfamily.another_quarries.AnotherQuarries;
-import net.neoforged.neoforge.common.world.chunk.TicketController;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
-
 /**
- * Keeps the quarry itself and all active worker target chunks fully ticking.
+ * Keeps the quarry and its active target chunks at BLOCK_TICKING status.
  *
- * NeoForge's BlockPos ticket overload only controls natural spawning. The UUID
- * overload has a real "ticking" flag, so these chunks continue to receive full
- * chunk ticks even with no player nearby.
+ * This deliberately mirrors Logistics' working quarry implementation: it uses
+ * vanilla ServerChunkCache tickets at ChunkLevel.byStatus(BLOCK_TICKING)
+ * instead of NeoForge forced-chunk tickets.
  */
 public final class QuarryChunkTickets {
-    public static final TicketController CONTROLLER = new TicketController(
-            Identifier.fromNamespaceAndPath(AnotherQuarries.MOD_ID, "quarry_mining"));
+    public static final TicketType TICKET_TYPE = new TicketType(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("another_quarries", "quarry_block_ticking"),
+            40L,
+            false,
+            TicketType.TicketUse.LOADING_AND_SIMULATION);
 
     private QuarryChunkTickets() {}
 
-    private static UUID ownerId(ServerLevel level, BlockPos owner) {
-        String key = level.dimension().identifier() + ":" + owner.getX() + ":" + owner.getY() + ":" + owner.getZ();
-        return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
+    private static Ticket ticket() {
+        return new Ticket(TICKET_TYPE, net.minecraft.server.level.ChunkLevel.byStatus(FullChunkStatus.BLOCK_TICKING));
     }
 
     public static void sync(ServerLevel level, BlockPos owner, Iterable<BlockPos> activeTargets, LongOpenHashSet forcedChunks) {
-        UUID ticketOwner = ownerId(level, owner);
-
-        // The quarry's own chunk must be FULLY ticking too. Otherwise its
-        // BlockEntity ticker can stop and it can no longer maintain worker tickets.
-        long ownerChunk = ChunkPos.pack(owner);
         LongOpenHashSet needed = new LongOpenHashSet();
-        needed.add(ownerChunk);
-
+        needed.add(ChunkPos.pack(owner));
         for (BlockPos target : activeTargets) {
             needed.add(ChunkPos.pack(target));
+        }
+
+        // Refresh every needed ticket every machine tick, exactly like Logistics.
+        for (long chunk : needed) {
+            level.getChunkSource().addTicket(ticket(), ChunkPos.unpack(chunk));
         }
 
         LongOpenHashSet toRemove = new LongOpenHashSet(forcedChunks);
         toRemove.removeAll(needed);
         for (long chunk : toRemove) {
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            CONTROLLER.forceChunk(level, ticketOwner, chunkPos.x(), chunkPos.z(), false, true);
+            level.getChunkSource().removeTicket(ticket(), ChunkPos.unpack(chunk));
             forcedChunks.remove(chunk);
         }
 
-        for (long chunk : needed) {
-            if (forcedChunks.contains(chunk)) {
-                continue;
-            }
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            if (CONTROLLER.forceChunk(level, ticketOwner, chunkPos.x(), chunkPos.z(), true, true)) {
-                forcedChunks.add(chunk);
-            }
-        }
+        forcedChunks.addAll(needed);
     }
 
     public static void releaseAll(ServerLevel level, BlockPos owner, LongOpenHashSet forcedChunks) {
-        UUID ticketOwner = ownerId(level, owner);
         for (long chunk : forcedChunks.toLongArray()) {
-            ChunkPos chunkPos = ChunkPos.unpack(chunk);
-            CONTROLLER.forceChunk(level, ticketOwner, chunkPos.x(), chunkPos.z(), false, true);
+            level.getChunkSource().removeTicket(ticket(), ChunkPos.unpack(chunk));
         }
         forcedChunks.clear();
     }
