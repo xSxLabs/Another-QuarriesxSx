@@ -477,6 +477,23 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         }
     }
 
+    public static void bootstrapChunkQuarries(ServerLevel level, net.minecraft.world.level.chunk.ChunkAccess chunk) {
+        if (!(chunk instanceof net.minecraft.world.level.chunk.LevelChunk levelChunk)) {
+            return;
+        }
+        for (BlockEntity blockEntity : levelChunk.getBlockEntities().values()) {
+            if (blockEntity instanceof QuarryBlockEntity quarry) {
+                BlockPos pos = quarry.getBlockPos().immutable();
+                KNOWN_QUARRY_POSITIONS.computeIfAbsent(level, ignored -> new java.util.HashSet<>()).add(pos);
+                SERVER_TICK_WATCH.putIfAbsent(quarry, Long.MIN_VALUE);
+                QuarryChunkTickets.keepOwnerTicking(level, pos);
+                if (quarry.canWork()) {
+                    quarry.updateMiningChunkTickets(level);
+                }
+            }
+        }
+    }
+
     public static void fallbackServerTick(ServerLevel level) {
         long now = level.getGameTime();
         var known = KNOWN_QUARRY_POSITIONS.computeIfAbsent(level, ignored -> new java.util.HashSet<>());
