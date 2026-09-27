@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import net.neoforged.neoforge.registries.RegisterEvent;
 import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.mining.QuarryChunkTickets;
@@ -28,7 +29,7 @@ public final class AnotherQuarries {
 
     public AnotherQuarries(IEventBus modEventBus, ModContainer modContainer) {
         LOGGER.debug("Loading {}", MOD_ID);
-        QuarryChunkTickets.registerTicketTypes();
+        modEventBus.addListener(AnotherQuarries::onRegister);
         modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, net.unfamily.another_quarries.config.ModConfig.SPEC);
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
@@ -37,6 +38,10 @@ public final class AnotherQuarries {
         ModDataComponents.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(AnotherQuarries::onLevelTickPost);
+    }
+
+    private static void onRegister(RegisterEvent event) {
+        QuarryChunkTickets.registerTicketTypes();
     }
 
     private static void onLevelTickPost(LevelTickEvent.Post event) {
