@@ -999,6 +999,28 @@ public final class QuarryBlockQueue {
         return QuarryMiningFilters.isMineable(level, pos, maxMiningLevel);
     }
 
+    /**
+     * Returns the next queue position whose chunk must be loaded before target selection can continue.
+     * This is intentionally available even when no worker currently has a target: the queue stops at
+     * unloaded chunks, so ticketing worker targets alone can otherwise deadlock forever.
+     */
+    public BlockPos getCurrentScanPosition() {
+        if (airSkipCursorActive && !airSkipCursor.equals(BlockPos.ZERO)) {
+            return airSkipCursor;
+        }
+        if (!currentLayerBlocks.isEmpty()) {
+            int index = Math.min(Math.max(layerCursor, 0), currentLayerBlocks.size() - 1);
+            return currentLayerBlocks.get(index);
+        }
+        if (mode == QuarryDiggingMode.CHUNK && !areaChunks.isEmpty()) {
+            return new BlockPos((activeChunkX << 4) + 8, currentLayerWorldY(), (activeChunkZ << 4) + 8);
+        }
+        if (usesVolumeChunkSlice() && !areaChunks.isEmpty()) {
+            return new BlockPos((volumeSliceChunkX() << 4) + 8, currentLayerWorldY(), (volumeSliceChunkZ() << 4) + 8);
+        }
+        return null;
+    }
+
     public int getAreaChunkCount() {
         return areaChunks.size();
     }
