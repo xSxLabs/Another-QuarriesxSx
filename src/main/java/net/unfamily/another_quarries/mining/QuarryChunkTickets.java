@@ -38,6 +38,13 @@ public final class QuarryChunkTickets {
                 new TicketType(20L, 14));
     }
 
+    public static void keepOwnerTicking(ServerLevel level, BlockPos owner) {
+        if (QUARRY == null) return;
+        int ticketLevel = ChunkLevel.byStatus(FullChunkStatus.BLOCK_TICKING);
+        ChunkPos ownerChunk = new ChunkPos(owner.getX() >> 4, owner.getZ() >> 4);
+        level.getChunkSource().addTicket(new Ticket(QUARRY, ticketLevel), ownerChunk);
+    }
+
     public static void sync(ServerLevel level, BlockPos owner, Iterable<BlockPos> activeTargets, LongOpenHashSet forcedChunks) {
         if (QUARRY == null) {
             return;
