@@ -8,6 +8,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
+import net.unfamily.another_quarries.AnotherQuarries;
 import net.unfamily.another_quarries.block.QuarryBlock;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
 import net.unfamily.another_quarries.item.QuarryEquipmentSlots;
@@ -36,6 +37,10 @@ public final class QuarryMiningEngine {
     private boolean airSkipCursorActive;
     private BlockPos airSkipCursor = BlockPos.ZERO;
     private int regenScanCooldown;
+    private long diagnosticLastMiningReport;
+    private long diagnosticSuccessfulBreaks;
+    private long diagnosticFailedBreaks;
+    private long diagnosticNoTargetTicks;
 
     public QuarryMiningEngine(QuarryBlockEntity quarry) {
         this.quarry = quarry;
@@ -353,6 +358,12 @@ public final class QuarryMiningEngine {
                 || (queueBuilt && queue.hasPendingMiningWork(level));
         setQuarryVisual(level, active ? QuarryBlock.QuarryState.ON : QuarryBlock.QuarryState.OFF);
         syncQueueState();
+
+        if (workers.stream().noneMatch(w -> w.target != null)) {
+            diagnosticNoTargetTicks++;
+        }
+        diagnosticMiningReport(level, active, progressed, tickCtx, drill);
+
         return active;
     }
 
@@ -386,13 +397,26 @@ public final class QuarryMiningEngine {
                 break;
             }
 
-            if (QuarryBlockBreaker.breakBlock(level, worker.target, ctx, buffer)) {
+            BlockPos attemptedTarget = worker.target;
+            boolean targetLoaded = level.isLoaded(attemptedTarget);
+            boolean targetChunkLoaded = level.hasChunkAt(attemptedTarget);
+            BlockState attemptedState = level.getBlockState(attemptedTarget);
+            if (QuarryBlockBreaker.breakBlock(level, attemptedTarget, ctx, buffer)) {
+                diagnosticSuccessfulBreaks++;
                 quarry.getEnergyStorage().extractEnergy(rfPerBlock, false);
                 releaseReservedTarget(reserved, worker);
                 worker.target = null;
                 worker.progress = 0;
                 broken++;
+                AnotherQuarries.LOGGER.info("[AQ-BREAK] quarry={} result=SUCCESS target={} block={} loaded={} chunkLoaded={} totalSuccess={} energyAfter={}",
+                        quarry.getBlockPos(), attemptedTarget, attemptedState, targetLoaded, targetChunkLoaded,
+                        diagnosticSuccessfulBreaks, quarry.getEnergyStorage().getEnergyStored());
             } else {
+                diagnosticFailedBreaks++;
+                AnotherQuarries.LOGGER.warn("[AQ-BREAK] quarry={} result=FAILED target={} block={} loaded={} chunkLoaded={} canBreak={} progress={}/{} totalFailed={} energy={}",
+                        quarry.getBlockPos(), attemptedTarget, attemptedState, targetLoaded, targetChunkLoaded,
+                        QuarryBlockBreaker.canBreak(level, attemptedTarget, drill), worker.progress, worker.requiredTicks,
+                        diagnosticFailedBreaks, quarry.getEnergyStorage().getEnergyStored());
                 releaseReservedTarget(reserved, worker);
                 worker.target = null;
                 worker.progress = 0;
@@ -400,6 +424,40 @@ public final class QuarryMiningEngine {
             }
         }
         return broken;
+    }
+
+    private void diagnosticMiningReport(ServerLevel level, boolean active, boolean progressed,
+            MiningTickContext tickCtx, QuarryDrillType drill) {
+        long now = level.getGameTime();
+        if (now - diagnosticLastMiningReport < 200L) {
+            return;
+        }
+        diagnosticLastMiningReport = now;
+
+        StringBuilder workerInfo = new StringBuilder();
+        for (int i = 0; i < workers.size(); i++) {
+            WorkerState w = workers.get(i);
+            if (i > 0) workerInfo.append(" | ");
+            workerInfo.append('#').append(i)
+                    .append("{target=").append(w.target)
+                    .append(",progress=").append(w.progress).append('/').append(w.requiredTicks);
+            if (w.target != null) {
+                workerInfo.append(",loaded=").append(level.isLoaded(w.target))
+                        .append(",chunkLoaded=").append(level.hasChunkAt(w.target))
+                        .append(",block=").append(level.getBlockState(w.target))
+                        .append(",canBreak=").append(QuarryBlockBreaker.canBreak(level, w.target, drill))
+                        .append(",chunk=").append(w.target.getX() >> 4).append(',').append(w.target.getZ() >> 4);
+            }
+            workerInfo.append('}');
+        }
+
+        AnotherQuarries.LOGGER.info(
+                "[AQ-MINING] quarry={} gameTime={} mode={} active={} progressed={} queueBuilt={} phase={} volumeDy={} belowLayer={} cursor={} activeChunkIndex={} volumeSliceChunkIndex={} pending={} workers={}/{} workerState=[{}] successes={} failures={} noTargetTicks={} energy={}/{}",
+                quarry.getBlockPos(), now, quarry.getDiggingMode(), active, progressed, queueBuilt, miningPhase,
+                volumeDy, belowLayer, layerCursor, activeChunkIndex, volumeSliceChunkIndex,
+                queueBuilt && queue.hasPendingMiningWork(level), workers.size(), tickCtx.activeWorkers(),
+                workerInfo, diagnosticSuccessfulBreaks, diagnosticFailedBreaks, diagnosticNoTargetTicks,
+                quarry.getEnergyStorage().getEnergyStored(), quarry.getEnergyStorage().getMaxEnergyStored());
     }
 
     public void onPowerEnabled() {
