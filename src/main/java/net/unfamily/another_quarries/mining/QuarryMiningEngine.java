@@ -480,10 +480,18 @@ public final class QuarryMiningEngine {
     }
 
     public List<BlockPos> getChunkTicketPositions(Level level) {
-        // Worker targets must stay BLOCK_TICKING in every digging mode.
-        // Previously VOLUME mode returned no target positions, so the quarry BE
-        // kept ticking while remote mining chunks expired after the player left.
-        return getActiveTargetPositions();
+        // Keep both actual worker targets and the queue's prospective scan chunk ticking.
+        // The queue deliberately refuses to inspect an unloaded chunk. If every worker is
+        // targetless at that boundary, target-only tickets create a deadlock: no target ->
+        // no ticket -> chunk stays unloaded -> no target. Ticket the scan front as well.
+        List<BlockPos> positions = new ArrayList<>(getActiveTargetPositions());
+        if (queueBuilt && !queue.isPlaceholder()) {
+            BlockPos scanPosition = queue.getCurrentScanPosition();
+            if (scanPosition != null && !positions.contains(scanPosition)) {
+                positions.add(scanPosition);
+            }
+        }
+        return positions;
     }
 
     public int getTotalAreaChunkCount() {
