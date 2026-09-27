@@ -20,6 +20,8 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.energy.EnergyStorage;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.unfamily.another_quarries.client.gui.QuarryMenu;
@@ -411,6 +413,33 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         };
     }
 
+    private void pullEnergyFromNeighbors(ServerLevel level) {
+        int missing = energyStorage.getMaxEnergyStored() - energyStorage.getEnergyStored();
+        if (missing <= 0) return;
+
+        for (Direction dir : Direction.values()) {
+            if (missing <= 0) break;
+            BlockPos sourcePos = worldPosition.relative(dir);
+            BlockState sourceState = level.getBlockState(sourcePos);
+            BlockEntity sourceBe = level.getBlockEntity(sourcePos);
+            var source = level.getCapability(
+                    Capabilities.Energy.BLOCK, sourcePos, sourceState, sourceBe, dir.getOpposite());
+            if (source == null) continue;
+
+            try (Transaction tx = Transaction.openRoot()) {
+                int extracted = source.extract(missing, tx);
+                if (extracted > 0) {
+                    int accepted = energyStorage.receiveEnergy(extracted, false);
+                    if (accepted == extracted) {
+                        tx.commit();
+                        missing -= accepted;
+                        setChanged();
+                    }
+                }
+            }
+        }
+    }
+
     public static void serverTick(Level level, BlockPos pos, BlockState state, QuarryBlockEntity be) {
         if (level.isClientSide()) {
             return;
@@ -419,6 +448,9 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
             return;
         }
         SERVER_TICK_WATCH.put(be, serverLevel.getGameTime());
+        // Do not depend on an adjacent generator/cable/tesseract being ticked.
+        // Pull available energy through NeoForge's standard energy capability.
+        be.pullEnergyFromNeighbors(serverLevel);
         be.purgeFilteredBufferItems();
         boolean canWork = be.canWork();
         if (canWork && !be.previousCanWork) {
