@@ -46,8 +46,11 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
+    private static final Map<QuarryBlockEntity, Long> SERVER_TICK_WATCH = new WeakHashMap<>();
     public static final int BUFFER_SLOT_COUNT = 27;
     public static int equipmentSlotCount() {
         return QuarryEquipmentSlots.slotCount();
@@ -401,6 +404,7 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         if (!(level instanceof ServerLevel serverLevel)) {
             return;
         }
+        SERVER_TICK_WATCH.put(be, serverLevel.getGameTime());
         be.purgeFilteredBufferItems();
         boolean canWork = be.canWork();
         if (canWork && !be.previousCanWork) {
@@ -415,6 +419,32 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
         QuarryOutputHandler.tryEjectBufferUp(serverLevel, pos, be.bufferHandler);
         be.miningEngine.tick(level);
         be.updateMiningChunkTickets(serverLevel);
+    }
+
+    /**
+     * Server-level safety ticker. NeoForge/FTB may keep a chunk loaded without
+     * invoking its BlockEntity ticker when no player is nearby. Quarries that
+     * were seen by the normal ticker are therefore ticked once from LevelTick.Post
+     * if their normal ticker did not run during the current game tick.
+     */
+    public static void fallbackServerTick(ServerLevel level) {
+        long now = level.getGameTime();
+        for (var entry : new ArrayList<>(SERVER_TICK_WATCH.entrySet())) {
+            QuarryBlockEntity be = entry.getKey();
+            if (be == null || be.isRemoved() || be.getLevel() != level) {
+                SERVER_TICK_WATCH.remove(be);
+                continue;
+            }
+            if (entry.getValue() != null && entry.getValue() == now) {
+                continue;
+            }
+            BlockPos pos = be.getBlockPos();
+            if (level.getBlockEntity(pos) != be) {
+                SERVER_TICK_WATCH.remove(be);
+                continue;
+            }
+            serverTick(level, pos, be.getBlockState(), be);
+        }
     }
 
     public void drops() {
