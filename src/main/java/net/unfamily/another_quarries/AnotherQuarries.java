@@ -18,6 +18,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
 import net.unfamily.another_quarries.block.structure.StructureQuarryBreakCascade;
 import net.unfamily.another_quarries.block.entity.QuarryBlockEntity;
@@ -40,6 +41,7 @@ public final class AnotherQuarries {
         ModCreativeModeTabs.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(AnotherQuarries::onLevelTickPost);
         NeoForge.EVENT_BUS.addListener(AnotherQuarries::onLevelLoad);
+        NeoForge.EVENT_BUS.addListener(AnotherQuarries::onChunkLoad);
     }
 
     private static void onRegister(RegisterEvent event) {
@@ -49,6 +51,12 @@ public final class AnotherQuarries {
     private static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel server) {
             QuarryBlockEntity.bootstrapLoadedQuarries(server);
+        }
+    }
+
+    private static void onChunkLoad(ChunkEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel server) {
+            QuarryBlockEntity.bootstrapChunkQuarries(server, event.getChunk());
         }
     }
 
