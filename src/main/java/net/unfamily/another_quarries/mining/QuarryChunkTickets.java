@@ -30,11 +30,11 @@ public final class QuarryChunkTickets {
         }
         QUARRY = Registry.register(
                 BuiltInRegistries.TICKET_TYPE,
-                Identifier.fromNamespaceAndPath("another_quarries", "quarry"),
+                Identifier.fromNamespaceAndPath("another_quarries", "quarry_block_ticking"),
                 new TicketType(20L, 15));
         QUARRY_BOUNDARY = Registry.register(
                 BuiltInRegistries.TICKET_TYPE,
-                Identifier.fromNamespaceAndPath("another_quarries", "quarry_boundary"),
+                Identifier.fromNamespaceAndPath("another_quarries", "quarry_boundary_block_ticking"),
                 new TicketType(20L, 14));
     }
 
