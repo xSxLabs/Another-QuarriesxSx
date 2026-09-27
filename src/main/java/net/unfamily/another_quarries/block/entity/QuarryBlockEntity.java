@@ -462,6 +462,21 @@ public class QuarryBlockEntity extends BlockEntity implements MenuProvider {
      * were seen by the normal ticker are therefore ticked once from LevelTick.Post
      * if their normal ticker did not run during the current game tick.
      */
+    /**
+     * Re-establishes BLOCK_TICKING tickets for quarry block entities that are already loaded
+     * when a server level starts. This closes the startup gap where no player has visited the
+     * quarry yet, so onLoad/normal BE ticking has not populated the runtime watch maps.
+     */
+    public static void bootstrapLoadedQuarries(ServerLevel level) {
+        // ServerLevel does not expose a cheap global BE list. Loaded chunk block entities do,
+        // and the chunk source already knows which chunks survived/are force-loaded at startup.
+        // Seed from persisted known positions first; normal onLoad then covers newly loaded chunks.
+        var known = KNOWN_QUARRY_POSITIONS.computeIfAbsent(level, ignored -> new java.util.HashSet<>());
+        for (BlockPos pos : new ArrayList<>(known)) {
+            QuarryChunkTickets.keepOwnerTicking(level, pos);
+        }
+    }
+
     public static void fallbackServerTick(ServerLevel level) {
         long now = level.getGameTime();
         var known = KNOWN_QUARRY_POSITIONS.computeIfAbsent(level, ignored -> new java.util.HashSet<>());
