@@ -44,14 +44,14 @@ public final class QuarryChunkTickets {
         }
 
         int ticketLevel = ChunkLevel.byStatus(FullChunkStatus.BLOCK_TICKING);
-        ChunkPos ownerChunk = new ChunkPos(owner);
+        ChunkPos ownerChunk = new ChunkPos(owner.getX() >> 4, owner.getZ() >> 4);
         level.getChunkSource().addTicket(new Ticket(QUARRY, ticketLevel), ownerChunk);
 
         LongOpenHashSet needed = new LongOpenHashSet();
-        needed.add(ownerChunk.toLong());
+        needed.add(ChunkPos.pack(ownerChunk.x(), ownerChunk.z()));
         for (BlockPos target : activeTargets) {
-            ChunkPos targetChunk = new ChunkPos(target);
-            needed.add(targetChunk.toLong());
+            ChunkPos targetChunk = new ChunkPos(target.getX() >> 4, target.getZ() >> 4);
+            needed.add(ChunkPos.pack(targetChunk.x(), targetChunk.z()));
             level.getChunkSource().addTicket(new Ticket(QUARRY_BOUNDARY, ticketLevel), targetChunk);
         }
 
